@@ -310,9 +310,9 @@ function renderMes(m, aberto){
     const itens = despBloco(m, b.tipo, null);
     const soma = somaBloco(itens), pg = pagoBloco(itens);
     const rows = itens.length ? itens.map(d => `
-      <tr class="${classeVenc(d)}">
+      <tr id="row-${d.id}" class="${classeVenc(d)}">
         <td class="th-pago"><input type="checkbox" class="chk" ${d.pago?'checked':''} onchange="edit('${d.id}','pago',this.checked)"></td>
-        <td><input type="text" value="${(d.descricao||'').replace(/"/g,'&quot;')}" oninput="edit('${d.id}','descricao',this.value)" placeholder="Descricao">${badgeVenc(d)}</td>
+        <td><input type="text" value="${(d.descricao||'').replace(/"/g,'&quot;')}" oninput="edit('${d.id}','descricao',this.value)" placeholder="Descricao"><span id="badge-${d.id}">${badgeVenc(d)}</span></td>
         <td style="width:130px"><input type="text" inputmode="numeric" maxlength="10" placeholder="dd/mm/aaaa" value="${isoParaBR(d.vencimento)}" oninput="mascaraData(this,'${d.id}')"></td>
         <td class="col-valor" style="width:140px"><input type="number" value="${d.valor||''}" oninput="edit('${d.id}','valor',this.value)" placeholder="0,00" step="0.01"></td>
         <td style="width:40px"><button class="del" onclick="remover('${d.id}','${m}')">&times;</button></td>
@@ -379,9 +379,9 @@ function renderCartaoBloco(m, cartao){
   const histRows = hist.length ? hist.map(h=>`<div class="hist-item"><span>${fmt(h.valor)}</span><span class="data">${new Date(h.pago_em).toLocaleDateString('pt-BR')} ${new Date(h.pago_em).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}</span></div>`).join('') : `<div class="empty">Nenhum pagamento registrado ainda.</div>`;
   const valInput = temManual ? o.valor_manual : '';
   const lancRows = despBloco(m,'cartao',cid).length ? despBloco(m,'cartao',cid).map(d=>`
-    <tr class="${classeVenc(d)}">
+    <tr id="row-${d.id}" class="${classeVenc(d)}">
       <td class="th-pago"><input type="checkbox" class="chk" ${d.pago?'checked':''} onchange="edit('${d.id}','pago',this.checked)"></td>
-      <td><input type="text" value="${(d.descricao||'').replace(/"/g,'&quot;')}" oninput="edit('${d.id}','descricao',this.value)" placeholder="Descricao">${badgeVenc(d)}</td>
+      <td><input type="text" value="${(d.descricao||'').replace(/"/g,'&quot;')}" oninput="edit('${d.id}','descricao',this.value)" placeholder="Descricao"><span id="badge-${d.id}">${badgeVenc(d)}</span></td>
       <td style="width:130px"><input type="text" inputmode="numeric" maxlength="10" placeholder="dd/mm/aaaa" value="${isoParaBR(d.vencimento)}" oninput="mascaraData(this,'${d.id}')"></td>
       <td class="col-valor" style="width:140px"><input type="number" value="${d.valor||''}" oninput="edit('${d.id}','valor',this.value)" placeholder="0,00" step="0.01"></td>
       <td style="width:40px"><button class="del" onclick="remover('${d.id}','${m}')">&times;</button></td>
@@ -500,7 +500,8 @@ async function remover(id, mes){
 function edit(id, campo, valor){
   let mesAlvo=null;
   for(const m of MESES){ for(const lista of [dados[m].receitas, dados[m].despesas]){ const item=lista.find(x=>x.id===id); if(item){ item[campo]=valor; mesAlvo=m; } } }
-  if(campo==='pago' || campo==='vencimento'){ render(); if(mesAlvo) reabrir(mesAlvo); }
+  if(campo==='pago'){ render(); if(mesAlvo) reabrir(mesAlvo); }
+  else if(campo==='vencimento'){ atualizarLinhaVenc(id); atualizarResumos(); }
   else if(campo==='valor'){ atualizarResumos(); if(mesAlvo) atualizarMiniMes(mesAlvo); }
   clearTimeout(timers[id+campo]); setStatus('Salvando...', 'sync');
   timers[id+campo] = setTimeout(async ()=>{
@@ -532,6 +533,17 @@ function atualizarResumos(){
     if(el){ const rec=totalReceitasMes(m), desp=totalDespesasMes(m), s=rec-desp, pg=totalPagoMes(m);
       el.innerHTML=`<span>Receita <b class="verde">${fmt(rec)}</b></span><span>Despesa <b class="vermelho">${fmt(desp)}</b></span><span>Pago <b class="roxo">${fmt(pg)}</b></span><span>Saldo <b class="${s>=0?'verde':'vermelho'}">${fmt(s)}</b></span>`; }
   });
+}
+
+function atualizarLinhaVenc(id){
+  // encontra o item
+  let item=null;
+  for(const m of MESES){ for(const lista of [dados[m].receitas, dados[m].despesas]){ const it=lista.find(x=>x.id===id); if(it){ item=it; break; } } if(item) break; }
+  if(!item) return;
+  const tr = document.getElementById('row-'+id);
+  if(tr){ tr.className = classeVenc(item); }
+  const badge = document.getElementById('badge-'+id);
+  if(badge){ badge.innerHTML = badgeVenc(item); }
 }
 
 function toggleMes(m){ document.querySelector(`.mes[data-mes="${m}"]`).classList.toggle('aberto'); }
