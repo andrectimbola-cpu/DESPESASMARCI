@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Organizador Financeiro</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family: -apple-system, 'Segoe UI', Roboto, sans-serif; background:#f2f4f7; color:#1e2430; padding:20px; line-height:1.4; }
+  h1 { font-size:22px; margin-bottom:4px; color:#141924; }
+  .sub { color:#6b7482; font-size:13px; margin-bottom:16px; }
+  .topbar { display:flex; align-items:center; gap:14px; flex-wrap:wrap; margin-bottom:16px; }
+  .status { font-size:12px; padding:8px 12px; border-radius:8px; display:inline-block; }
+  .status.ok { background:#e0f5eb; color:#1a9c66; }
+  .status.erro { background:#fbe4e4; color:#d64545; }
+  .status.sync { background:#e3edfb; color:#3b7ddd; }
+  .ano-sel { display:flex; align-items:center; gap:8px; }
+  .ano-sel label { font-size:12px; color:#6b7482; text-transform:uppercase; }
+  .ano-sel select { background:#fff; border:1px solid #d4dae2; color:#1e2430; border-radius:8px; padding:8px 12px; font-size:14px; font-weight:600; }
+  .painel { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:14px; margin-bottom:14px; }
+  .card { background:#fff; border:1px solid #e2e6ec; border-radius:12px; padding:16px; box-shadow:0 1px 3px rgba(30,40,60,.05); }
+  .card .label { font-size:12px; color:#6b7482; text-transform:uppercase; letter-spacing:.5px; }
+  .card .valor { font-size:24px; font-weight:700; margin-top:6px; }
+  .verde { color:#159a5f; } .vermelho { color:#d64545; } .amarelo { color:#c88a00; } .azul { color:#2f6fd6; } .roxo { color:#8a4fd6; }
+  .painel-cartoes { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:14px; margin-bottom:20px; }
+  .alerta-topo { display:flex; gap:12px; flex-wrap:wrap; margin-bottom:14px; }
+  .alerta-chip { padding:10px 16px; border-radius:10px; font-size:13px; font-weight:600; }
+  .alerta-chip.venc { background:#fbe4e4; color:#c0392b; border:1px solid #f0b8b8; }
+  .alerta-chip.breve { background:#fdf4dd; color:#9a6b00; border:1px solid #ecd48a; }
+  .alerta-chip.ok { background:#e0f5eb; color:#1a9c66; border:1px solid #b8e6cf; }
+  .mes { background:#fff; border:1px solid #e2e6ec; border-radius:14px; margin-bottom:20px; overflow:hidden; box-shadow:0 1px 3px rgba(30,40,60,.05); }
+  .mes-header { padding:16px 20px; background:#f7f9fb; cursor:pointer; display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #eef1f5; }
+  .mes-header h2 { font-size:18px; text-transform:capitalize; color:#141924; }
+  .mes-resumo { display:flex; gap:18px; font-size:13px; flex-wrap:wrap; color:#6b7482; }
+  .mes-resumo span b { display:block; font-size:15px; }
+  .mes-body { padding:20px; display:none; }
+  .mes.aberto .mes-body { display:block; }
+  .mes-mini { display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); gap:10px; margin-bottom:20px; }
+  .mini { background:#f7f9fb; border-radius:10px; padding:12px; border:1px solid #eef1f5; }
+  .mini .label { font-size:11px; color:#6b7482; text-transform:uppercase; }
+  .mini .valor { font-size:18px; font-weight:600; margin-top:4px; }
+  .secao { margin-bottom:18px; }
+  .secao-title { display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; }
+  .secao-title h3 { font-size:14px; color:#141924; }
+  .btns button { width:30px; height:30px; border-radius:8px; border:none; cursor:pointer; font-size:18px; font-weight:700; margin-left:6px; color:#fff; }
+  .add { background:#159a5f; } .add:hover { background:#1cb972; }
+  table { width:100%; border-collapse:collapse; }
+  th { text-align:left; font-size:11px; color:#6b7482; text-transform:uppercase; padding:6px 8px; }
+  td { padding:4px 8px; border-top:1px solid #eef1f5; vertical-align:middle; }
+  input[type=text], input[type=number], select.inp { background:#fff; border:1px solid #d4dae2; color:#1e2430; border-radius:6px; padding:7px 9px; font-size:13px; width:100%; }
+  input:focus, select:focus { outline:none; border-color:#2f6fd6; }
+  .col-valor input { text-align:right; }
+  .chk { width:20px; height:20px; cursor:pointer; accent-color:#159a5f; }
+  tr.pago-row { background:#eafaf1; }
+  tr.pago-row input[type=text], tr.pago-row input[type=number] { color:#0f7a49; }
+  tr.vencido-row { background:#fbe4e4; }
+  tr.vencido-row input[type=text], tr.vencido-row input[type=number] { color:#c0392b; }
+  tr.vencebreve-row { background:#fdf4dd; }
+  .badge-venc { display:inline-block; font-size:10px; font-weight:700; padding:2px 6px; border-radius:5px; margin-left:6px; vertical-align:middle; }
+  .badge-venc.venc { background:#d64545; color:#fff; }
+  .badge-venc.breve { background:#c88a00; color:#fff; }
+  .del { background:#e5c0c0; color:#a12b2b; border:none; border-radius:6px; width:28px; height:28px; cursor:pointer; font-size:14px; }
+  .del:hover { background:#d64545; color:#fff; }
+  .empty { color:#9aa3b0; font-size:13px; padding:8px; }
+  .footer-mes { display:flex; justify-content:flex-end; gap:24px; margin-top:14px; padding-top:14px; border-top:1px solid #eef1f5; font-size:14px; flex-wrap:wrap; color:#6b7482; }
+  .toolbar { margin-bottom:20px; display:flex; gap:10px; flex-wrap:wrap; }
+  .toolbar button { background:#fff; border:1px solid #d4dae2; color:#1e2430; padding:9px 14px; border-radius:8px; cursor:pointer; font-size:13px; }
+  .toolbar button:hover { border-color:#2f6fd6; }
+  .th-pago { width:44px; text-align:center; }
+  .cartao-box { background:#f7f9fb; border:1px solid #eef1f5; border-radius:12px; padding:14px 16px; margin-bottom:14px; }
+  .cartao-top { display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
+  .cartao-top h3 { font-size:15px; margin-right:auto; display:flex; align-items:center; gap:8px; }
+  .cartao-top .campo-valor { display:flex; align-items:center; gap:6px; }
+  .cartao-top .campo-valor label { font-size:11px; color:#6b7482; text-transform:uppercase; }
+  .cartao-top input.valor-manual { width:130px; text-align:right; font-weight:700; font-size:15px; }
+  .btn-pago { border:1px solid #159a5f; background:#fff; color:#159a5f; border-radius:8px; padding:7px 14px; font-size:13px; cursor:pointer; font-weight:600; }
+  .btn-pago.on { background:#159a5f; color:#fff; }
+  .btn-hist { border:1px solid #d4dae2; background:#fff; color:#6b7482; border-radius:8px; padding:7px 12px; font-size:13px; cursor:pointer; }
+  .btn-hist:hover { border-color:#2f6fd6; color:#2f6fd6; }
+  .btn-del-cartao { border:1px solid #e5c0c0; background:#fff; color:#a12b2b; border-radius:8px; padding:7px 10px; font-size:12px; cursor:pointer; }
+  .btn-del-cartao:hover { background:#d64545; color:#fff; }
+  .hist-lista { margin-top:12px; border-top:1px dashed #d4dae2; padding-top:10px; display:none; }
+  .hist-lista.aberto { display:block; }
+  .hist-item { display:flex; justify-content:space-between; font-size:13px; padding:5px 2px; border-bottom:1px solid #eef1f5; }
+  .hist-item .data { color:#6b7482; }
+  .hint { font-size:11px; color:#9aa3b0; margin-top:6px; }
+  .add-cartao-btn { background:#2f6fd6; color:#fff; border:none; border-radius:8px; padding:9px 16px; font-size:13px; cursor:pointer; font-weight:600; margin-bottom:14px; }
+  .add-cartao-btn:hover { background:#255bb5; }
+  .nome-cartao-input { border:1px solid transparent; background:transparent; font-size:15px; font-weight:700; color:#2f6fd6; padding:2px 4px; border-radius:5px; width:auto; min-width:120px; }
+  .nome-cartao-input:hover { border-color:#d4dae2; background:#fff; }
+  .nome-cartao-input:focus { border-color:#2f6fd6; background:#fff; outline:none; }
+</style>
+</head>
+<body>
+  <h1>Organizador Financeiro</h1>
+  <div class="sub">Controle de receitas e despesas</div>
+  <div class="topbar">
+    <div id="status" class="status sync">Conectando...</div>
+    <div class="ano-sel">
+      <label>Ano</label>
+      <select id="anoSelect" onchange="trocarAno(this.value)"></select>
+    </div>
+  </div>
+  <div class="painel" id="painelGeral"></div>
+  <div class="painel-cartoes" id="painelCartoes"></div>
+  <div class="alerta-topo" id="alertaTopo"></div>
+  <div class="toolbar">
+    <button onclick="expandirTodos(true)">Expandir todos</button>
+    <button onclick="expandirTodos(false)">Recolher todos</button>
+    <button onclick="recarregar()">Atualizar</button>
+  </div>
+  <div id="meses"></div>
+<script>
+// ==========================================================
+//  CONFIGURACAO DO SUPABASE - troque por cliente
+// ==========================================================
+const SUPABASE_URL  = 'https://hdkznjiafqteetntanoi.supabase.co';
+const SUPABASE_KEY  = 'sb_publishable_4xOWhEeaH4MqidqM1F5LpA_ALz11ErY';
+// ==========================================================
+
+const MESES = ['janeiro','fevereiro','marco','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
+const TABELA    = 'lancamentos';
+const TABELA_CT = 'cartoes';
+const TABELA_CM = 'cartao_mes';
+const TABELA_CH = 'cartao_historico';
+let sb = null;
+
+let anoAtual = new Date().getFullYear();
+let cartoes = [];      // [{id, nome, ordem}]
+let dados = {};        // dados[mes] = {receitas:[], despesas:[]}
+MESES.forEach(m => dados[m] = { receitas:[], despesas:[] });
+let cartaoMes = {};    // cartaoMes[mes][cartao_id] = {id, valor_manual, pago}
+let historico = {};    // historico[mes+'|'+cartao_id] = [ {valor, pago_em} ]
+let timers = {};
+let digitando = false;
+let refreshPendente = false;
+let canalRealtime = null;
+
+function setStatus(txt, cls){ const el = document.getElementById('status'); el.textContent = txt; el.className = 'status ' + cls; }
+function fmt(v){ return (Number(v)||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'}); }
+function num(v){ return parseFloat(v)||0; }
+function nomeCartao(id){ const c = cartoes.find(x=>x.id===id); return c ? c.nome : 'Cartao'; }
+
+// ---------- carregar ----------
+async function carregar(){
+  setStatus('Carregando...', 'sync');
+  MESES.forEach(m => dados[m] = { receitas:[], despesas:[] });
+  cartaoMes = {}; MESES.forEach(m => cartaoMes[m] = {});
+  historico = {};
+
+  const rc = await sb.from(TABELA_CT).select('*').order('ordem',{ascending:true});
+  if(rc.error){ setStatus('Erro ao carregar cartoes: '+rc.error.message, 'erro'); return; }
+  cartoes = rc.data || [];
+
+  const r1 = await sb.from(TABELA).select('*').eq('ano', anoAtual).order('ordem',{ascending:true});
+  if(r1.error){ setStatus('Erro ao carregar: '+r1.error.message, 'erro'); return; }
+  (r1.data||[]).forEach(row => { if(!dados[row.mes]) return; if(row.categoria==='receita') dados[row.mes].receitas.push(row); else dados[row.mes].despesas.push(row); });
+
+  const r2 = await sb.from(TABELA_CM).select('*').eq('ano', anoAtual);
+  if(!r2.error && r2.data){ r2.data.forEach(row => { if(cartaoMes[row.mes]) cartaoMes[row.mes][row.cartao_id] = row; }); }
+
+  const r3 = await sb.from(TABELA_CH).select('*').eq('ano', anoAtual).order('pago_em',{ascending:false});
+  if(!r3.error && r3.data){ r3.data.forEach(row => { const k = row.mes+'|'+row.cartao_id; (historico[k]=historico[k]||[]).push(row); }); }
+
+  setStatus('Sincronizado', 'ok');
+  render();
+}
+async function recarregar(){ await carregar(); }
+async function recarregarSuave(){ if(digitando){ refreshPendente = true; return; } await carregar(); }
+
+document.addEventListener('focusin', (e)=>{ if(e.target && (e.target.tagName==='INPUT'||e.target.tagName==='SELECT')) digitando = true; });
+document.addEventListener('focusout', (e)=>{ if(e.target && (e.target.tagName==='INPUT'||e.target.tagName==='SELECT')){ digitando=false; if(refreshPendente){ refreshPendente=false; recarregarSuave(); } } });
+
+function assinarRealtime(){
+  try{
+    canalRealtime = sb.channel('org-fin-neutro')
+      .on('postgres_changes',{event:'*',schema:'public',table:TABELA},()=>recarregarSuave())
+      .on('postgres_changes',{event:'*',schema:'public',table:TABELA_CT},()=>recarregarSuave())
+      .on('postgres_changes',{event:'*',schema:'public',table:TABELA_CM},()=>recarregarSuave())
+      .on('postgres_changes',{event:'*',schema:'public',table:TABELA_CH},()=>recarregarSuave())
+      .subscribe();
+  }catch(e){}
+}
+
+// ---------- datas ----------
+function isoParaBR(iso){ if(!iso) return ''; const p=String(iso).slice(0,10).split('-'); if(p.length!==3) return ''; return p[2]+'/'+p[1]+'/'+p[0]; }
+function brParaISO(br){ if(!br) return null; const m=br.match(/^(\d{2})\/(\d{2})\/(\d{4})$/); if(!m) return null; const dd=+m[1],mm=+m[2]; if(mm<1||mm>12||dd<1||dd>31) return null; return m[3]+'-'+m[2]+'-'+m[1]; }
+function mascaraData(el, id){
+  let v=el.value.replace(/\D/g,'').slice(0,8); let out=v;
+  if(v.length>=5) out=v.slice(0,2)+'/'+v.slice(2,4)+'/'+v.slice(4);
+  else if(v.length>=3) out=v.slice(0,2)+'/'+v.slice(2);
+  el.value=out;
+  const iso=brParaISO(out);
+  if(iso){ edit(id,'vencimento',iso); } else if(out===''){ edit(id,'vencimento',null); }
+}
+
+// ---------- vencimento ----------
+function hojeISO(){ const d=new Date(); d.setHours(0,0,0,0); return d; }
+function statusVenc(item){
+  if(item.pago) return ''; if(!item.vencimento) return '';
+  const hoje=hojeISO(); const v=new Date(item.vencimento+'T00:00:00');
+  const diff=Math.round((v-hoje)/86400000);
+  if(diff<0) return 'vencido'; if(diff<=3) return 'breve'; return '';
+}
+function classeVenc(item){ const st=statusVenc(item); return st==='vencido'?'vencido-row':(st==='breve'?'vencebreve-row':(item.pago?'pago-row':'')); }
+function badgeVenc(item){ const st=statusVenc(item); if(st==='vencido') return '<span class="badge-venc venc">VENCIDO</span>'; if(st==='breve') return '<span class="badge-venc breve">VENCE JA</span>'; return ''; }
+function contarVencidos(){ let venc=0,breve=0; MESES.forEach(m=>{ dados[m].despesas.forEach(d=>{ const st=statusVenc(d); if(st==='vencido')venc++; else if(st==='breve')breve++; }); }); return {venc,breve}; }
+function alertaTopoHtml(){ const c=contarVencidos(); let ch=''; if(c.venc>0) ch+=`<div class="alerta-chip venc">${c.venc} conta(s) VENCIDA(S)</div>`; if(c.breve>0) ch+=`<div class="alerta-chip breve">${c.breve} vence(m) em ate 3 dias</div>`; if(c.venc===0&&c.breve===0) ch=`<div class="alerta-chip ok">Nenhum vencimento em atraso</div>`; return ch; }
+function atualizarAlertaTopo(){ const el=document.getElementById('alertaTopo'); if(el) el.innerHTML=alertaTopoHtml(); }
+
+// ---------- totais ----------
+function totalReceitasMes(m){ return dados[m].receitas.reduce((s,r)=>s+num(r.valor),0); }
+function despBloco(m, tipo, cartaoId){ return dados[m].despesas.filter(d=>{ if(tipo==='cartao') return d.tipo==='cartao'&&d.cartao_id===cartaoId; return d.tipo===tipo; }); }
+function somaBloco(itens){ return itens.reduce((s,r)=>s+num(r.valor),0); }
+function pagoBloco(itens){ return itens.filter(r=>r.pago).reduce((s,r)=>s+num(r.valor),0); }
+function totalBoletoMes(m){ return somaBloco(despBloco(m,'boleto',null)); }
+function totalFixaMes(m){ return somaBloco(despBloco(m,'fixa',null)); }
+function totalDiversasMes(m){ return somaBloco(despBloco(m,'diversas',null)); }
+
+function cmObj(m, cid){ return (cartaoMes[m] && cartaoMes[m][cid]) ? cartaoMes[m][cid] : null; }
+function valorCartao(m, cid){ const o=cmObj(m,cid); if(o && o.valor_manual!==null && o.valor_manual!==undefined && o.valor_manual!=='') return num(o.valor_manual); return somaBloco(despBloco(m,'cartao',cid)); }
+function cartaoPago(m, cid){ const o=cmObj(m,cid); return !!(o && o.pago); }
+
+function totalDespesasMes(m){
+  let total=0;
+  dados[m].despesas.forEach(d=>{ if(d.tipo!=='cartao') total+=num(d.valor); });
+  cartoes.forEach(c=> total+=valorCartao(m,c.id));
+  return total;
+}
+function totalPagoMes(m){
+  let pago=0;
+  dados[m].despesas.filter(d=>d.pago).forEach(d=>{
+    if(d.tipo==='cartao'){ const o=cmObj(m,d.cartao_id); const temManual=o&&o.valor_manual!==null&&o.valor_manual!==undefined&&o.valor_manual!==''; if(!temManual) pago+=num(d.valor); }
+    else pago+=num(d.valor);
+  });
+  cartoes.forEach(c=>{ if(cartaoPago(m,c.id)) pago+=valorCartao(m,c.id); });
+  return pago;
+}
+function totalAbertoMes(m){ return totalDespesasMes(m)-totalPagoMes(m); }
+function totalRecebidoMes(m){ return dados[m].receitas.filter(r=>r.pago).reduce((s,r)=>s+num(r.valor),0); }
+function totalCartoesMes(m){ let t=0; cartoes.forEach(c=> t+=valorCartao(m,c.id)); return t; }
+
+// ---------- render ----------
+function render(){
+  // seletor de ano
+  const anoSel = document.getElementById('anoSelect');
+  if(anoSel && !anoSel.dataset.pronto){
+    const base = new Date().getFullYear();
+    let opts='';
+    for(let a=base-1; a<=base+3; a++){ opts+=`<option value="${a}" ${a===anoAtual?'selected':''}>${a}</option>`; }
+    anoSel.innerHTML=opts; anoSel.dataset.pronto='1';
+  }
+
+  let recTotal=0, despTotal=0, pagoTotal=0, abertoTotal=0, recebidoTotal=0, cartoesTotal=0, diversasTotal=0, boletosTotal=0;
+  MESES.forEach(m => { recTotal+=totalReceitasMes(m); despTotal+=totalDespesasMes(m); pagoTotal+=totalPagoMes(m); recebidoTotal+=totalRecebidoMes(m); cartoesTotal+=totalCartoesMes(m); diversasTotal+=totalDiversasMes(m); boletosTotal+=totalBoletoMes(m); });
+  abertoTotal = despTotal - pagoTotal;
+  const saldo = recTotal - despTotal;
+
+  document.getElementById('painelGeral').innerHTML = `
+    <div class="card"><div class="label">Receita no ano</div><div class="valor verde">${fmt(recTotal)}</div></div>
+    <div class="card"><div class="label">Divida no ano</div><div class="valor vermelho">${fmt(despTotal)}</div></div>
+    <div class="card"><div class="label">Ja pago (ano)</div><div class="valor roxo">${fmt(pagoTotal)}</div></div>
+    <div class="card"><div class="label">Falta pagar (ano)</div><div class="valor amarelo">${fmt(abertoTotal)}</div></div>
+    <div class="card"><div class="label">Saldo projetado</div><div class="valor ${saldo>=0?'verde':'vermelho'}">${fmt(saldo)}</div></div>`;
+  document.getElementById('painelCartoes').innerHTML = `
+    <div class="card"><div class="label">Cartoes (total ano)</div><div class="valor azul">${fmt(cartoesTotal)}</div></div>
+    <div class="card"><div class="label">Boletos (ano)</div><div class="valor amarelo">${fmt(boletosTotal)}</div></div>
+    <div class="card"><div class="label">Despesas diversas (ano)</div><div class="valor roxo">${fmt(diversasTotal)}</div></div>
+    <div class="card"><div class="label">Recebido (ano)</div><div class="valor verde">${fmt(recebidoTotal)}</div></div>`;
+  atualizarAlertaTopo();
+
+  const abertos = [...document.querySelectorAll('.mes.aberto')].map(e=>e.dataset.mes);
+  document.getElementById('meses').innerHTML = MESES.map(m => renderMes(m, abertos.includes(m))).join('');
+}
+
+function miniCardsHtml(m){
+  const rec=totalReceitasMes(m), pago=totalPagoMes(m), abertoVal=totalAbertoMes(m), recebido=totalRecebidoMes(m);
+  return `
+    <div class="mini"><div class="label">Cartoes</div><div class="valor azul">${fmt(totalCartoesMes(m))}</div></div>
+    <div class="mini"><div class="label">Boletos</div><div class="valor amarelo">${fmt(totalBoletoMes(m))}</div></div>
+    <div class="mini"><div class="label">Despesas fixas</div><div class="valor vermelho">${fmt(totalFixaMes(m))}</div></div>
+    <div class="mini"><div class="label">Despesas diversas</div><div class="valor roxo">${fmt(totalDiversasMes(m))}</div></div>
+    <div class="mini"><div class="label">A receber</div><div class="valor verde">${fmt(rec)}</div></div>
+    <div class="mini"><div class="label">Recebido</div><div class="valor verde">${fmt(recebido)}</div></div>
+    <div class="mini"><div class="label">Pago</div><div class="valor roxo">${fmt(pago)}</div></div>
+    <div class="mini"><div class="label">Falta pagar</div><div class="valor amarelo">${fmt(abertoVal)}</div></div>`;
+}
+
+function renderMes(m, aberto){
+  const rec=totalReceitasMes(m), desp=totalDespesasMes(m), saldo=rec-desp, pago=totalPagoMes(m);
+
+  // cartoes dinamicos
+  const cartaoHtml = cartoes.map(c => renderCartaoBloco(m, c)).join('') +
+    `<button class="add-cartao-btn" onclick="adicionarCartao()">+ Adicionar cartao</button>`;
+
+  // blocos simples
+  const blocosSimples = [
+    { titulo:'Boletos',          tipo:'boleto',   classe:'amarelo' },
+    { titulo:'Despesas fixas',   tipo:'fixa',     classe:'vermelho' },
+    { titulo:'Despesas diversas',tipo:'diversas', classe:'roxo' }
+  ];
+  const blocosHtml = cartaoHtml + blocosSimples.map(b => {
+    const itens = despBloco(m, b.tipo, null);
+    const soma = somaBloco(itens), pg = pagoBloco(itens);
+    const rows = itens.length ? itens.map(d => `
+      <tr class="${classeVenc(d)}">
+        <td class="th-pago"><input type="checkbox" class="chk" ${d.pago?'checked':''} onchange="edit('${d.id}','pago',this.checked)"></td>
+        <td><input type="text" value="${(d.descricao||'').replace(/"/g,'&quot;')}" oninput="edit('${d.id}','descricao',this.value)" placeholder="Descricao">${badgeVenc(d)}</td>
+        <td style="width:130px"><input type="text" inputmode="numeric" maxlength="10" placeholder="dd/mm/aaaa" value="${isoParaBR(d.vencimento)}" oninput="mascaraData(this,'${d.id}')"></td>
+        <td class="col-valor" style="width:140px"><input type="number" value="${d.valor||''}" oninput="edit('${d.id}','valor',this.value)" placeholder="0,00" step="0.01"></td>
+        <td style="width:40px"><button class="del" onclick="remover('${d.id}','${m}')">&times;</button></td>
+      </tr>`).join('') : `<tr><td colspan="5" class="empty">Nenhum lancamento.</td></tr>`;
+    return `
+      <div class="secao">
+        <div class="secao-title"><h3 class="${b.classe}">${b.titulo}</h3><div class="btns"><button class="add" onclick="adicionarDespesa('${m}','${b.tipo}','')">+</button></div></div>
+        <table><thead><tr><th class="th-pago">Pago</th><th>Descricao</th><th>Vencimento</th><th style="text-align:right">Valor</th><th></th></tr></thead><tbody>${rows}</tbody></table>
+        <div class="footer-mes" style="justify-content:flex-start;gap:20px"><span>Subtotal: <b class="${b.classe}">${fmt(soma)}</b></span><span>Pago: <b class="roxo">${fmt(pg)}</b></span><span>Falta: <b class="amarelo">${fmt(soma-pg)}</b></span></div>
+      </div>`;
+  }).join('');
+
+  const receitasRows = dados[m].receitas.length ? dados[m].receitas.map(r=>`
+    <tr class="${r.pago?'pago-row':''}">
+      <td class="th-pago"><input type="checkbox" class="chk" ${r.pago?'checked':''} onchange="edit('${r.id}','pago',this.checked)"></td>
+      <td><input type="text" value="${(r.descricao||'').replace(/"/g,'&quot;')}" oninput="edit('${r.id}','descricao',this.value)" placeholder="Descricao"></td>
+      <td class="col-valor" style="width:140px"><input type="number" value="${r.valor||''}" oninput="edit('${r.id}','valor',this.value)" placeholder="0,00" step="0.01"></td>
+      <td style="width:40px"><button class="del" onclick="remover('${r.id}','${m}')">&times;</button></td>
+    </tr>`).join('') : `<tr><td colspan="4" class="empty">Nenhuma receita.</td></tr>`;
+
+  return `
+  <div class="mes ${aberto?'aberto':''}" data-mes="${m}">
+    <div class="mes-header" onclick="toggleMes('${m}')">
+      <h2>${m}</h2>
+      <div class="mes-resumo">
+        <span>Receita <b class="verde">${fmt(rec)}</b></span>
+        <span>Despesa <b class="vermelho">${fmt(desp)}</b></span>
+        <span>Pago <b class="roxo">${fmt(pago)}</b></span>
+        <span>Saldo <b class="${saldo>=0?'verde':'vermelho'}">${fmt(saldo)}</b></span>
+      </div>
+    </div>
+    <div class="mes-body">
+      <div class="mes-mini" id="mini-${m}">${miniCardsHtml(m)}</div>
+      ${blocosHtml}
+      <div class="secao">
+        <div class="secao-title"><h3 class="verde">Receitas</h3><div class="btns"><button class="add" onclick="adicionar('${m}','receita')">+</button></div></div>
+        <table><thead><tr><th class="th-pago">Rec.</th><th>Descricao</th><th style="text-align:right">Valor</th><th></th></tr></thead><tbody>${receitasRows}</tbody></table>
+      </div>
+      <div class="footer-mes">
+        <span>Total receitas: <b class="verde">${fmt(rec)}</b></span>
+        <span>Total despesas: <b class="vermelho">${fmt(desp)}</b></span>
+        <span>Pago: <b class="roxo">${fmt(pago)}</b></span>
+        <span>Falta pagar: <b class="amarelo">${fmt(totalAbertoMes(m))}</b></span>
+        <span>Saldo: <b class="${saldo>=0?'verde':'vermelho'}">${fmt(saldo)}</b></span>
+      </div>
+    </div>
+  </div>`;
+}
+
+function dicaCartaoTexto(m, cid){
+  const o=cmObj(m,cid); const temManual=o&&o.valor_manual!==null&&o.valor_manual!==undefined&&o.valor_manual!=='';
+  const somaLanc=somaBloco(despBloco(m,'cartao',cid)); const valorEfetivo=valorCartao(m,cid);
+  const msg = temManual?'Usando o valor digitado (ignora os lancamentos abaixo).':(somaLanc>0?'Somando os lancamentos abaixo. Digite um total para substituir.':'Digite o total do cartao ou adicione lancamentos no +.');
+  return `${msg} Valor atual: <b>${fmt(valorEfetivo)}</b>`;
+}
+function atualizarMiniMes(m){ const el=document.getElementById('mini-'+m); if(el) el.innerHTML=miniCardsHtml(m); }
+function atualizarDicaCartao(m, cid){ const el=document.getElementById('hint-'+m+'-'+cid); if(el) el.innerHTML=dicaCartaoTexto(m,cid); }
+
+function renderCartaoBloco(m, cartao){
+  const cid=cartao.id;
+  const o=cmObj(m,cid); const temManual=o&&o.valor_manual!==null&&o.valor_manual!==undefined&&o.valor_manual!=='';
+  const somaLanc=somaBloco(despBloco(m,'cartao',cid)); const pago=cartaoPago(m,cid);
+  const key=m+'|'+cid; const hist=historico[key]||[];
+  const histRows = hist.length ? hist.map(h=>`<div class="hist-item"><span>${fmt(h.valor)}</span><span class="data">${new Date(h.pago_em).toLocaleDateString('pt-BR')} ${new Date(h.pago_em).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}</span></div>`).join('') : `<div class="empty">Nenhum pagamento registrado ainda.</div>`;
+  const valInput = temManual ? o.valor_manual : '';
+  const lancRows = despBloco(m,'cartao',cid).length ? despBloco(m,'cartao',cid).map(d=>`
+    <tr class="${classeVenc(d)}">
+      <td class="th-pago"><input type="checkbox" class="chk" ${d.pago?'checked':''} onchange="edit('${d.id}','pago',this.checked)"></td>
+      <td><input type="text" value="${(d.descricao||'').replace(/"/g,'&quot;')}" oninput="edit('${d.id}','descricao',this.value)" placeholder="Descricao">${badgeVenc(d)}</td>
+      <td style="width:130px"><input type="text" inputmode="numeric" maxlength="10" placeholder="dd/mm/aaaa" value="${isoParaBR(d.vencimento)}" oninput="mascaraData(this,'${d.id}')"></td>
+      <td class="col-valor" style="width:140px"><input type="number" value="${d.valor||''}" oninput="edit('${d.id}','valor',this.value)" placeholder="0,00" step="0.01"></td>
+      <td style="width:40px"><button class="del" onclick="remover('${d.id}','${m}')">&times;</button></td>
+    </tr>`).join('') : `<tr><td colspan="5" class="empty">Nenhum lancamento (ou usando total digitado).</td></tr>`;
+
+  return `
+  <div class="secao">
+    <div class="cartao-box" style="${pago?'background:#eafaf1;border-color:#bfe8d0;':''}">
+      <div class="cartao-top">
+        <h3><input type="text" class="nome-cartao-input" value="${(cartao.nome||'').replace(/"/g,'&quot;')}" onchange="renomearCartao('${cid}',this.value)"></h3>
+        <div class="campo-valor">
+          <label>Total do mes</label>
+          <input type="number" class="valor-manual" step="0.01" placeholder="${fmt(somaLanc).replace('R$','').trim()}" value="${valInput}" oninput="setCartaoValor('${m}','${cid}',this.value)">
+        </div>
+        <button class="btn-pago ${pago?'on':''}" onclick="toggleCartaoPago('${m}','${cid}')">${pago?'Pago ✓':'Marcar pago'}</button>
+        <button class="btn-hist" onclick="toggleHist('${m}','${cid}')">Historico (${hist.length})</button>
+        <button class="btn-del-cartao" onclick="removerCartao('${cid}')">Excluir</button>
+      </div>
+      <div class="hint" id="hint-${m}-${cid}">${dicaCartaoTexto(m,cid)}</div>
+      <div class="hist-lista" id="hist-${m}-${cid}">
+        <div style="font-size:12px;color:#6b7482;text-transform:uppercase;margin-bottom:6px">Historico de pagamentos</div>
+        ${histRows}
+      </div>
+    </div>
+    <div class="secao-title" style="margin-top:4px">
+      <h3 class="azul" style="font-size:13px">Lancamentos ${(cartao.nome||'').replace(/"/g,'&quot;')} (opcional)</h3>
+      <div class="btns"><button class="add" onclick="adicionarDespesa('${m}','cartao','${cid}')">+</button></div>
+    </div>
+    <table><thead><tr><th class="th-pago">Pago</th><th>Descricao</th><th>Vencimento</th><th style="text-align:right">Valor</th><th></th></tr></thead><tbody>${lancRows}</tbody></table>
+  </div>`;
+}
+
+// ---------- acoes cartao ----------
+async function adicionarCartao(){
+  setStatus('Salvando...', 'sync');
+  const novo = { nome:'Novo cartao', ordem: Date.now() };
+  const { data, error } = await sb.from(TABELA_CT).insert(novo).select().single();
+  if(error){ setStatus('Erro: '+error.message,'erro'); return; }
+  cartoes.push(data);
+  setStatus('Sincronizado','ok'); render();
+}
+async function renomearCartao(cid, nome){
+  const c = cartoes.find(x=>x.id===cid); if(c) c.nome=nome;
+  clearTimeout(timers['nome'+cid]); setStatus('Salvando...', 'sync');
+  timers['nome'+cid] = setTimeout(async ()=>{
+    const { error } = await sb.from(TABELA_CT).update({nome}).eq('id',cid);
+    setStatus(error?'Erro: '+error.message:'Sincronizado', error?'erro':'ok');
+  }, 500);
+}
+async function removerCartao(cid){
+  const c = cartoes.find(x=>x.id===cid);
+  if(!confirm('Excluir o cartao "'+(c?c.nome:'')+'"? Os lancamentos desse cartao no ano ficarao sem cartao.')) return;
+  setStatus('Removendo...', 'sync');
+  const { error } = await sb.from(TABELA_CT).delete().eq('id', cid);
+  if(error){ setStatus('Erro: '+error.message,'erro'); return; }
+  cartoes = cartoes.filter(x=>x.id!==cid);
+  setStatus('Sincronizado','ok'); await carregar();
+}
+async function setCartaoValor(m, cid, valor){
+  if(!cartaoMes[m]) cartaoMes[m]={};
+  const atual = cartaoMes[m][cid] || { ano:anoAtual, mes:m, cartao_id:cid };
+  atual.valor_manual = (valor===''?null:num(valor));
+  cartaoMes[m][cid]=atual;
+  atualizarResumos(); atualizarMiniMes(m); atualizarDicaCartao(m,cid);
+  clearTimeout(timers['cv'+m+cid]); setStatus('Salvando...', 'sync');
+  timers['cv'+m+cid] = setTimeout(async ()=>{
+    const payload = { ano:anoAtual, mes:m, cartao_id:cid, valor_manual:atual.valor_manual, pago:!!atual.pago };
+    const { data, error } = await sb.from(TABELA_CM).upsert(payload,{onConflict:'ano,mes,cartao_id'}).select().single();
+    if(!error && data) cartaoMes[m][cid]=data;
+    setStatus(error?'Erro: '+error.message:'Sincronizado', error?'erro':'ok');
+  }, 500);
+}
+async function toggleCartaoPago(m, cid){
+  if(!cartaoMes[m]) cartaoMes[m]={};
+  const atual = cartaoMes[m][cid] || { ano:anoAtual, mes:m, cartao_id:cid, valor_manual:null };
+  const novoPago = !atual.pago; atual.pago=novoPago; cartaoMes[m][cid]=atual;
+  setStatus('Salvando...', 'sync');
+  const payload = { ano:anoAtual, mes:m, cartao_id:cid, valor_manual:(atual.valor_manual??null), pago:novoPago };
+  const { data, error } = await sb.from(TABELA_CM).upsert(payload,{onConflict:'ano,mes,cartao_id'}).select().single();
+  if(error){ setStatus('Erro: '+error.message,'erro'); return; }
+  cartaoMes[m][cid]=data;
+  if(novoPago){
+    const v = valorCartao(m,cid);
+    const r = await sb.from(TABELA_CH).insert({ano:anoAtual,mes:m,cartao_id:cid,valor:v}).select().single();
+    if(!r.error && r.data){ const k=m+'|'+cid; (historico[k]=historico[k]||[]); historico[k].unshift(r.data); }
+  }
+  setStatus('Sincronizado','ok'); render(); reabrir(m);
+}
+function toggleHist(m, cid){ const el=document.getElementById('hist-'+m+'-'+cid); if(el) el.classList.toggle('aberto'); }
+
+// ---------- acoes lancamentos ----------
+async function adicionar(mes, categoria){
+  setStatus('Salvando...', 'sync');
+  const novo = { ano:anoAtual, mes, categoria, descricao:'', valor:0, tipo:'diversas', cartao_id:null, pago:false, vencimento:null, ordem:Date.now() };
+  const { data, error } = await sb.from(TABELA).insert(novo).select().single();
+  if(error){ setStatus('Erro: '+error.message,'erro'); return; }
+  (categoria==='receita'?dados[mes].receitas:dados[mes].despesas).push(data);
+  setStatus('Sincronizado','ok'); render(); reabrir(mes);
+}
+async function adicionarDespesa(mes, tipo, cartaoId){
+  setStatus('Salvando...', 'sync');
+  const novo = { ano:anoAtual, mes, categoria:'despesa', descricao:'', valor:0, tipo, cartao_id:(cartaoId||null), pago:false, vencimento:null, ordem:Date.now() };
+  const { data, error } = await sb.from(TABELA).insert(novo).select().single();
+  if(error){ setStatus('Erro: '+error.message,'erro'); return; }
+  dados[mes].despesas.push(data);
+  setStatus('Sincronizado','ok'); render(); reabrir(mes);
+}
+async function remover(id, mes){
+  setStatus('Removendo...', 'sync');
+  const { error } = await sb.from(TABELA).delete().eq('id', id);
+  if(error){ setStatus('Erro: '+error.message,'erro'); return; }
+  dados[mes].receitas = dados[mes].receitas.filter(r=>r.id!==id);
+  dados[mes].despesas = dados[mes].despesas.filter(r=>r.id!==id);
+  setStatus('Sincronizado','ok'); render(); reabrir(mes);
+}
+function edit(id, campo, valor){
+  let mesAlvo=null;
+  for(const m of MESES){ for(const lista of [dados[m].receitas, dados[m].despesas]){ const item=lista.find(x=>x.id===id); if(item){ item[campo]=valor; mesAlvo=m; } } }
+  if(campo==='pago' || campo==='vencimento'){ render(); if(mesAlvo) reabrir(mesAlvo); }
+  else if(campo==='valor'){ atualizarResumos(); if(mesAlvo) atualizarMiniMes(mesAlvo); }
+  clearTimeout(timers[id+campo]); setStatus('Salvando...', 'sync');
+  timers[id+campo] = setTimeout(async ()=>{
+    const patch={}; patch[campo]=(campo==='valor')?num(valor):valor;
+    const { error } = await sb.from(TABELA).update(patch).eq('id', id);
+    setStatus(error?'Erro: '+error.message:'Sincronizado', error?'erro':'ok');
+  }, 500);
+}
+
+function atualizarResumos(){ render(); }
+
+function toggleMes(m){ document.querySelector(`.mes[data-mes="${m}"]`).classList.toggle('aberto'); }
+function expandirTodos(abrir){ document.querySelectorAll('.mes').forEach(e => e.classList.toggle('aberto', abrir)); }
+function reabrir(m){ document.querySelector(`.mes[data-mes="${m}"]`)?.classList.add('aberto'); }
+
+async function trocarAno(a){ anoAtual = parseInt(a,10); await carregar(); }
+
+// ---------- init ----------
+if(SUPABASE_URL.startsWith('COLE_') || SUPABASE_KEY.startsWith('COLE_')){
+  setStatus('Configure SUPABASE_URL e SUPABASE_KEY no codigo (veja o topo do script)', 'erro');
+  render();
+} else {
+  try {
+    sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    carregar();
+    assinarRealtime();
+  } catch (e) {
+    setStatus('Erro ao conectar: ' + e.message, 'erro');
+    render();
+  }
+}
+</script>
+</body>
+</html>
