@@ -104,6 +104,13 @@
   <div class="topbar">
     <div id="status" class="status sync">Conectando...</div>
     <div class="ano-sel">
+      <label>Planilha</label>
+      <select id="planilhaSelect" onchange="trocarPlanilha(this.value)"></select>
+    </div>
+    <button class="add-cartao-btn" style="margin-bottom:0" onclick="adicionarPlanilha()">+ Nova planilha</button>
+    <button class="btn-hist" onclick="renomearPlanilhaPrompt()">Renomear</button>
+    <button class="btn-del-cartao" onclick="removerPlanilhaAtual()">Excluir planilha</button>
+    <div class="ano-sel">
       <label>Ano</label>
       <select id="anoSelect" onchange="trocarAno(this.value)"></select>
     </div>
@@ -130,9 +137,12 @@ const TABELA    = 'lancamentos';
 const TABELA_CT = 'cartoes';
 const TABELA_CM = 'cartao_mes';
 const TABELA_CH = 'cartao_historico';
+const TABELA_PL = 'planilhas';
 let sb = null;
 
 let anoAtual = new Date().getFullYear();
+let planilhas = [];        // [{id, nome, ordem}]
+let planilhaAtual = null;  // id da planilha selecionada
 let cartoes = [];      // [{id, nome, ordem}]
 let dados = {};        // dados[mes] = {receitas:[], despesas:[]}
 MESES.forEach(m => dados[m] = { receitas:[], despesas:[] });
@@ -149,24 +159,45 @@ function num(v){ return parseFloat(v)||0; }
 function nomeCartao(id){ const c = cartoes.find(x=>x.id===id); return c ? c.nome : 'Cartao'; }
 
 // ---------- carregar ----------
+async function carregarPlanilhas(){
+  const rp = await sb.from(TABELA_PL).select('*').order('ordem',{ascending:true});
+  if(rp.error){ setStatus('Erro ao carregar planilhas: '+rp.error.message, 'erro'); return false; }
+  planilhas = rp.data || [];
+  // se nao existe nenhuma, cria a primeira
+  if(planilhas.length === 0){
+    const nova = await sb.from(TABELA_PL).insert({nome:'Principal', ordem:Date.now()}).select().single();
+    if(nova.data) planilhas = [nova.data];
+  }
+  // define planilha atual: mantem a selecionada se ainda existir, senao a primeira
+  if(!planilhaAtual || !planilhas.find(p=>p.id===planilhaAtual)){
+    planilhaAtual = planilhas[0] ? planilhas[0].id : null;
+  }
+  return true;
+}
+
 async function carregar(){
   setStatus('Carregando...', 'sync');
   MESES.forEach(m => dados[m] = { receitas:[], despesas:[] });
   cartaoMes = {}; MESES.forEach(m => cartaoMes[m] = {});
   historico = {};
 
-  const rc = await sb.from(TABELA_CT).select('*').order('ordem',{ascending:true});
+  const okpl = await carregarPlanilhas();
+  if(!okpl) return;
+  if(!planilhaAtual){ setStatus('Sincronizado', 'ok'); render(); return; }
+  const PL = planilhaAtual;
+
+  const rc = await sb.from(TABELA_CT).select('*').eq('planilha_id', PL).order('ordem',{ascending:true});
   if(rc.error){ setStatus('Erro ao carregar cartoes: '+rc.error.message, 'erro'); return; }
   cartoes = rc.data || [];
 
-  const r1 = await sb.from(TABELA).select('*').eq('ano', anoAtual).order('ordem',{ascending:true});
+  const r1 = await sb.from(TABELA).select('*').eq('planilha_id', PL).eq('ano', anoAtual).order('ordem',{ascending:true});
   if(r1.error){ setStatus('Erro ao carregar: '+r1.error.message, 'erro'); return; }
   (r1.data||[]).forEach(row => { if(!dados[row.mes]) return; if(row.categoria==='receita') dados[row.mes].receitas.push(row); else dados[row.mes].despesas.push(row); });
 
-  const r2 = await sb.from(TABELA_CM).select('*').eq('ano', anoAtual);
+  const r2 = await sb.from(TABELA_CM).select('*').eq('planilha_id', PL).eq('ano', anoAtual);
   if(!r2.error && r2.data){ r2.data.forEach(row => { if(cartaoMes[row.mes]) cartaoMes[row.mes][row.cartao_id] = row; }); }
 
-  const r3 = await sb.from(TABELA_CH).select('*').eq('ano', anoAtual).order('pago_em',{ascending:false});
+  const r3 = await sb.from(TABELA_CH).select('*').eq('planilha_id', PL).eq('ano', anoAtual).order('pago_em',{ascending:false});
   if(!r3.error && r3.data){ r3.data.forEach(row => { const k = row.mes+'|'+row.cartao_id; (historico[k]=historico[k]||[]).push(row); }); }
 
   setStatus('Sincronizado', 'ok');
@@ -180,11 +211,12 @@ document.addEventListener('focusout', (e)=>{ if(e.target && (e.target.tagName===
 
 function assinarRealtime(){
   try{
-    canalRealtime = sb.channel('org-fin-neutro')
+    canalRealtime = sb.channel('contaleve-multi')
       .on('postgres_changes',{event:'*',schema:'public',table:TABELA},()=>recarregarSuave())
       .on('postgres_changes',{event:'*',schema:'public',table:TABELA_CT},()=>recarregarSuave())
       .on('postgres_changes',{event:'*',schema:'public',table:TABELA_CM},()=>recarregarSuave())
       .on('postgres_changes',{event:'*',schema:'public',table:TABELA_CH},()=>recarregarSuave())
+      .on('postgres_changes',{event:'*',schema:'public',table:TABELA_PL},()=>recarregarSuave())
       .subscribe();
   }catch(e){}
 }
@@ -249,6 +281,11 @@ function totalCartoesMes(m){ let t=0; cartoes.forEach(c=> t+=valorCartao(m,c.id)
 
 // ---------- render ----------
 function render(){
+  // seletor de planilhas (sempre atualiza, pois pode mudar)
+  const plSel = document.getElementById('planilhaSelect');
+  if(plSel){
+    plSel.innerHTML = planilhas.map(p=>`<option value="${p.id}" ${p.id===planilhaAtual?'selected':''}>${(p.nome||'').replace(/</g,'&lt;')}</option>`).join('');
+  }
   // seletor de ano
   const anoSel = document.getElementById('anoSelect');
   if(anoSel && !anoSel.dataset.pronto){
@@ -417,7 +454,7 @@ function renderCartaoBloco(m, cartao){
 // ---------- acoes cartao ----------
 async function adicionarCartao(){
   setStatus('Salvando...', 'sync');
-  const novo = { nome:'Novo cartao', ordem: Date.now() };
+  const novo = { nome:'Novo cartao', ordem: Date.now(), planilha_id: planilhaAtual };
   const { data, error } = await sb.from(TABELA_CT).insert(novo).select().single();
   if(error){ setStatus('Erro: '+error.message,'erro'); return; }
   cartoes.push(data);
@@ -448,7 +485,7 @@ async function setCartaoValor(m, cid, valor){
   atualizarResumos(); atualizarMiniMes(m); atualizarDicaCartao(m,cid);
   clearTimeout(timers['cv'+m+cid]); setStatus('Salvando...', 'sync');
   timers['cv'+m+cid] = setTimeout(async ()=>{
-    const payload = { ano:anoAtual, mes:m, cartao_id:cid, valor_manual:atual.valor_manual, pago:!!atual.pago };
+    const payload = { ano:anoAtual, mes:m, cartao_id:cid, valor_manual:atual.valor_manual, pago:!!atual.pago, planilha_id:planilhaAtual };
     const { data, error } = await sb.from(TABELA_CM).upsert(payload,{onConflict:'ano,mes,cartao_id'}).select().single();
     if(!error && data) cartaoMes[m][cid]=data;
     setStatus(error?'Erro: '+error.message:'Sincronizado', error?'erro':'ok');
@@ -459,13 +496,13 @@ async function toggleCartaoPago(m, cid){
   const atual = cartaoMes[m][cid] || { ano:anoAtual, mes:m, cartao_id:cid, valor_manual:null };
   const novoPago = !atual.pago; atual.pago=novoPago; cartaoMes[m][cid]=atual;
   setStatus('Salvando...', 'sync');
-  const payload = { ano:anoAtual, mes:m, cartao_id:cid, valor_manual:(atual.valor_manual??null), pago:novoPago };
+  const payload = { ano:anoAtual, mes:m, cartao_id:cid, valor_manual:(atual.valor_manual??null), pago:novoPago, planilha_id:planilhaAtual };
   const { data, error } = await sb.from(TABELA_CM).upsert(payload,{onConflict:'ano,mes,cartao_id'}).select().single();
   if(error){ setStatus('Erro: '+error.message,'erro'); return; }
   cartaoMes[m][cid]=data;
   if(novoPago){
     const v = valorCartao(m,cid);
-    const r = await sb.from(TABELA_CH).insert({ano:anoAtual,mes:m,cartao_id:cid,valor:v}).select().single();
+    const r = await sb.from(TABELA_CH).insert({ano:anoAtual,mes:m,cartao_id:cid,valor:v,planilha_id:planilhaAtual}).select().single();
     if(!r.error && r.data){ const k=m+'|'+cid; (historico[k]=historico[k]||[]); historico[k].unshift(r.data); }
   }
   setStatus('Sincronizado','ok'); render(); reabrir(m);
@@ -475,7 +512,7 @@ function toggleHist(m, cid){ const el=document.getElementById('hist-'+m+'-'+cid)
 // ---------- acoes lancamentos ----------
 async function adicionar(mes, categoria){
   setStatus('Salvando...', 'sync');
-  const novo = { ano:anoAtual, mes, categoria, descricao:'', valor:0, tipo:'diversas', cartao_id:null, pago:false, vencimento:null, ordem:Date.now() };
+  const novo = { ano:anoAtual, mes, categoria, descricao:'', valor:0, tipo:'diversas', cartao_id:null, pago:false, vencimento:null, ordem:Date.now(), planilha_id:planilhaAtual };
   const { data, error } = await sb.from(TABELA).insert(novo).select().single();
   if(error){ setStatus('Erro: '+error.message,'erro'); return; }
   (categoria==='receita'?dados[mes].receitas:dados[mes].despesas).push(data);
@@ -483,7 +520,7 @@ async function adicionar(mes, categoria){
 }
 async function adicionarDespesa(mes, tipo, cartaoId){
   setStatus('Salvando...', 'sync');
-  const novo = { ano:anoAtual, mes, categoria:'despesa', descricao:'', valor:0, tipo, cartao_id:(cartaoId||null), pago:false, vencimento:null, ordem:Date.now() };
+  const novo = { ano:anoAtual, mes, categoria:'despesa', descricao:'', valor:0, tipo, cartao_id:(cartaoId||null), pago:false, vencimento:null, ordem:Date.now(), planilha_id:planilhaAtual };
   const { data, error } = await sb.from(TABELA).insert(novo).select().single();
   if(error){ setStatus('Erro: '+error.message,'erro'); return; }
   dados[mes].despesas.push(data);
@@ -551,6 +588,51 @@ function expandirTodos(abrir){ document.querySelectorAll('.mes').forEach(e => e.
 function reabrir(m){ document.querySelector(`.mes[data-mes="${m}"]`)?.classList.add('aberto'); }
 
 async function trocarAno(a){ anoAtual = parseInt(a,10); await carregar(); }
+
+async function trocarPlanilha(id){ planilhaAtual = id; await carregar(); }
+
+async function adicionarPlanilha(){
+  const nome = prompt('Nome da nova planilha (ex.: Empresa, Pessoal, Marido):', '');
+  if(nome===null) return; // cancelou
+  const nomeFinal = (nome.trim()==='') ? 'Nova planilha' : nome.trim();
+  setStatus('Salvando...', 'sync');
+  const { data, error } = await sb.from(TABELA_PL).insert({nome:nomeFinal, ordem:Date.now()}).select().single();
+  if(error){ setStatus('Erro: '+error.message,'erro'); return; }
+  planilhas.push(data);
+  planilhaAtual = data.id;
+  await carregar();
+}
+
+async function renomearPlanilhaPrompt(){
+  const atual = planilhas.find(p=>p.id===planilhaAtual);
+  if(!atual){ return; }
+  const nome = prompt('Novo nome da planilha:', atual.nome||'');
+  if(nome===null || nome.trim()==='') return;
+  setStatus('Salvando...', 'sync');
+  const { error } = await sb.from(TABELA_PL).update({nome:nome.trim()}).eq('id', planilhaAtual);
+  if(error){ setStatus('Erro: '+error.message,'erro'); return; }
+  atual.nome = nome.trim();
+  setStatus('Sincronizado','ok'); render();
+}
+
+async function removerPlanilhaAtual(){
+  const atual = planilhas.find(p=>p.id===planilhaAtual);
+  if(!atual){ return; }
+  if(planilhas.length<=1){ alert('Voce precisa ter pelo menos uma planilha. Crie outra antes de excluir esta.'); return; }
+  if(!confirm('Excluir a planilha "'+(atual.nome||'')+'" e TODOS os dados dela (lancamentos, cartoes, historico)? Esta acao nao pode ser desfeita.')) return;
+  setStatus('Removendo...', 'sync');
+  const PL = planilhaAtual;
+  // apaga dados vinculados e depois a planilha
+  await sb.from(TABELA_CH).delete().eq('planilha_id', PL);
+  await sb.from(TABELA_CM).delete().eq('planilha_id', PL);
+  await sb.from(TABELA).delete().eq('planilha_id', PL);
+  await sb.from(TABELA_CT).delete().eq('planilha_id', PL);
+  const { error } = await sb.from(TABELA_PL).delete().eq('id', PL);
+  if(error){ setStatus('Erro: '+error.message,'erro'); return; }
+  planilhas = planilhas.filter(p=>p.id!==PL);
+  planilhaAtual = planilhas[0] ? planilhas[0].id : null;
+  await carregar();
+}
 
 // ---------- init ----------
 if(SUPABASE_URL.startsWith('COLE_') || SUPABASE_KEY.startsWith('COLE_')){
