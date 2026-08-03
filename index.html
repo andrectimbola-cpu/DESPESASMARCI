@@ -35,6 +35,38 @@
   .alerta-chip.venc { background:#fbe4e4; color:#c0392b; border:1px solid #f0b8b8; }
   .alerta-chip.breve { background:#fdf4dd; color:#9a6b00; border:1px solid #ecd48a; }
   .alerta-chip.ok { background:#e0f5eb; color:#1a9c66; border:1px solid #b8e6cf; }
+  .alerta-chip.venc { cursor:pointer; }
+  .alerta-chip.venc:hover { filter:brightness(0.97); }
+  .venc-lista { width:100%; margin-top:10px; background:#fff; border:1px solid #f0b8b8; border-radius:10px; padding:8px; display:none; }
+  .venc-lista.aberto { display:block; }
+  .venc-item { display:flex; justify-content:space-between; align-items:center; gap:10px; padding:8px 10px; border-bottom:1px solid #f7e0e0; font-size:13px; }
+  .venc-item:last-child { border-bottom:none; }
+  .venc-item .vi-desc { flex:1; color:#1e2430; font-weight:600; }
+  .venc-item .vi-meta { color:#9a4a4a; font-size:12px; }
+  .venc-item .vi-valor { color:#c0392b; font-weight:700; white-space:nowrap; }
+  .venc-item .vi-pagar { border:1px solid #159a5f; background:#fff; color:#159a5f; border-radius:6px; padding:4px 10px; font-size:12px; cursor:pointer; font-weight:600; white-space:nowrap; }
+  .venc-item .vi-pagar:hover { background:#159a5f; color:#fff; }
+  .rel-overlay { display:none; position:fixed; inset:0; background:rgba(20,30,40,.55); z-index:100; padding:20px; overflow:auto; }
+  .rel-overlay.aberto { display:flex; align-items:flex-start; justify-content:center; }
+  .rel-box { background:#fff; border-radius:14px; max-width:800px; width:100%; margin:20px auto; padding:0; box-shadow:0 10px 40px rgba(0,0,0,.3); }
+  .rel-head { display:flex; justify-content:space-between; align-items:center; padding:16px 20px; border-bottom:1px solid #eef1f5; }
+  .rel-head h2 { font-size:18px; color:#141924; }
+  .rel-head .rel-close { background:none; border:none; font-size:24px; cursor:pointer; color:#6b7482; }
+  .rel-controls { display:flex; gap:10px; align-items:center; padding:12px 20px; flex-wrap:wrap; border-bottom:1px solid #eef1f5; }
+  .rel-controls select { background:#fff; border:1px solid #d4dae2; border-radius:8px; padding:7px 12px; font-size:14px; }
+  .rel-controls button { background:#159a5f; color:#fff; border:none; border-radius:8px; padding:8px 16px; font-size:13px; font-weight:600; cursor:pointer; }
+  .rel-body { padding:20px; }
+  .rel-cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:10px; margin-bottom:20px; }
+  .rel-card { background:#f7f9fb; border-radius:10px; padding:12px; border:1px solid #eef1f5; }
+  .rel-card .l { font-size:11px; color:#6b7482; text-transform:uppercase; }
+  .rel-card .v { font-size:18px; font-weight:700; margin-top:4px; }
+  .rel-sec { margin-bottom:18px; }
+  .rel-sec h3 { font-size:14px; color:#141924; margin-bottom:8px; border-bottom:2px solid #159a5f; padding-bottom:4px; display:inline-block; }
+  .rel-table { width:100%; border-collapse:collapse; font-size:13px; }
+  .rel-table th { text-align:left; color:#6b7482; font-size:11px; text-transform:uppercase; padding:6px 8px; border-bottom:1px solid #eef1f5; }
+  .rel-table td { padding:6px 8px; border-bottom:1px solid #f2f4f7; }
+  .rel-table td.num { text-align:right; }
+  .rel-vazio { color:#9aa3b0; font-size:13px; padding:6px 8px; }
   .mes { background:#fff; border:1px solid #e2e6ec; border-radius:14px; margin-bottom:20px; overflow:hidden; box-shadow:0 1px 3px rgba(30,40,60,.05); }
   .mes-header { padding:16px 20px; background:#f7f9fb; cursor:pointer; display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #eef1f5; }
   .mes-header h2 { font-size:18px; text-transform:capitalize; color:#141924; }
@@ -122,8 +154,13 @@
     <button onclick="expandirTodos(true)">Expandir todos</button>
     <button onclick="expandirTodos(false)">Recolher todos</button>
     <button onclick="recarregar()">Atualizar</button>
+    <button onclick="abrirRelatorio()" style="border-color:#2f6fd6;color:#2f6fd6;font-weight:600">📊 Relatorio do mes</button>
   </div>
   <div id="meses"></div>
+
+  <div id="relatorioOverlay" class="rel-overlay" onclick="fecharRelatorioFundo(event)">
+    <div class="rel-box" id="relatorioBox"></div>
+  </div>
 <script>
 // ==========================================================
 //  CONFIGURACAO DO SUPABASE - troque por cliente
@@ -263,7 +300,37 @@ function statusVenc(item){
 function classeVenc(item){ const st=statusVenc(item); return st==='vencido'?'vencido-row':(st==='breve'?'vencebreve-row':(item.pago?'pago-row':'')); }
 function badgeVenc(item){ const st=statusVenc(item); if(st==='vencido') return '<span class="badge-venc venc">VENCIDO</span>'; if(st==='breve') return '<span class="badge-venc breve">VENCE JA</span>'; return ''; }
 function contarVencidos(){ let venc=0,breve=0; MESES.forEach(m=>{ dados[m].despesas.forEach(d=>{ const st=statusVenc(d); if(st==='vencido')venc++; else if(st==='breve')breve++; }); }); return {venc,breve}; }
-function alertaTopoHtml(){ const c=contarVencidos(); let ch=''; if(c.venc>0) ch+=`<div class="alerta-chip venc">${c.venc} conta(s) VENCIDA(S)</div>`; if(c.breve>0) ch+=`<div class="alerta-chip breve">${c.breve} vence(m) em ate 3 dias</div>`; if(c.venc===0&&c.breve===0) ch=`<div class="alerta-chip ok">Nenhum vencimento em atraso</div>`; return ch; }
+function listaVencidas(){
+  const arr=[];
+  MESES.forEach(m=>{ dados[m].despesas.forEach(d=>{ if(statusVenc(d)==='vencido'){
+    let bloco = d.tipo==='cartao' ? nomeCartao(d.cartao_id) : (d.tipo==='boleto'?'Boleto':(d.tipo==='fixa'?'Despesa fixa':'Diversa'));
+    arr.push({ id:d.id, mes:m, desc:(d.descricao||'(sem descricao)'), valor:num(d.valor), venc:d.vencimento, bloco });
+  } }); });
+  // ordena por data de vencimento (mais antiga primeiro)
+  arr.sort((a,b)=> (a.venc||'').localeCompare(b.venc||''));
+  return arr;
+}
+function alertaTopoHtml(){
+  const c=contarVencidos(); let ch='';
+  if(c.venc>0){
+    ch+=`<div class="alerta-chip venc" onclick="toggleVencLista()">${c.venc} conta(s) VENCIDA(S) ▼</div>`;
+  }
+  if(c.breve>0) ch+=`<div class="alerta-chip breve">${c.breve} vence(m) em ate 3 dias</div>`;
+  if(c.venc===0&&c.breve===0) ch=`<div class="alerta-chip ok">Nenhum vencimento em atraso</div>`;
+  // lista detalhada (escondida ate clicar)
+  if(c.venc>0){
+    const itens = listaVencidas().map(v=>`
+      <div class="venc-item">
+        <div class="vi-desc">${v.desc.replace(/</g,'&lt;')}<div class="vi-meta">${v.bloco} • ${v.mes} • venceu em ${isoParaBR(v.venc)}</div></div>
+        <div class="vi-valor">${fmt(v.valor)}</div>
+        <button class="vi-pagar" onclick="pagarVencida('${v.id}','${v.mes}')">Marcar pago</button>
+      </div>`).join('');
+    ch+=`<div class="venc-lista" id="vencLista">${itens}</div>`;
+  }
+  return ch;
+}
+function toggleVencLista(){ const el=document.getElementById('vencLista'); if(el) el.classList.toggle('aberto'); }
+function pagarVencida(id, mes){ edit(id,'pago',true); }
 function atualizarAlertaTopo(){ const el=document.getElementById('alertaTopo'); if(el) el.innerHTML=alertaTopoHtml(); }
 
 // ---------- totais ----------
@@ -607,6 +674,100 @@ function expandirTodos(abrir){ document.querySelectorAll('.mes').forEach(e => e.
 function reabrir(m){ document.querySelector(`.mes[data-mes="${m}"]`)?.classList.add('aberto'); }
 
 async function trocarAno(a){ anoAtual = parseInt(a,10); await carregar(); }
+
+// ---------- Relatorio mensal ----------
+let relMesAtual = null;
+function abrirRelatorio(){
+  // mes padrao: primeiro mes que tem movimento, ou o mes atual do sistema
+  if(!relMesAtual){
+    const mesSistema = MESES[new Date().getMonth()];
+    relMesAtual = mesSistema;
+  }
+  document.getElementById('relatorioOverlay').classList.add('aberto');
+  renderRelatorio();
+}
+function fecharRelatorio(){ document.getElementById('relatorioOverlay').classList.remove('aberto'); }
+function fecharRelatorioFundo(e){ if(e.target.id==='relatorioOverlay') fecharRelatorio(); }
+function trocarMesRelatorio(m){ relMesAtual = m; renderRelatorio(); }
+
+function renderRelatorio(){
+  const m = relMesAtual;
+  const planilhaNome = (planilhas.find(p=>p.id===planilhaAtual)||{}).nome || '';
+  const rec = totalReceitasMes(m), desp = totalDespesasMes(m), saldo = rec-desp;
+  const pago = totalPagoMes(m), aberto = totalAbertoMes(m), recebido = totalRecebidoMes(m);
+
+  // linhas de receitas e despesas
+  const recRows = dados[m].receitas.length ? dados[m].receitas.map(r=>`
+    <tr><td>${(r.descricao||'-').replace(/</g,'&lt;')}</td><td>${r.pago?'Recebido':'A receber'}</td><td class="num">${fmt(num(r.valor))}</td></tr>`).join('') : `<tr><td colspan="3" class="rel-vazio">Sem receitas neste mes.</td></tr>`;
+
+  // despesas agrupadas por bloco
+  const despItens=[];
+  cartoes.forEach(c=>{ const v=valorCartao(m,c.id); if(v>0) despItens.push({desc:c.nome, tipo:'Cartao', pago:cartaoPago(m,c.id), valor:v}); });
+  dados[m].despesas.forEach(d=>{ if(d.tipo!=='cartao'){ const t=d.tipo==='boleto'?'Boleto':(d.tipo==='fixa'?'Fixa':'Diversa'); despItens.push({desc:(d.descricao||'-'), tipo:t, pago:d.pago, valor:num(d.valor), venc:d.vencimento}); } });
+  const despRows = despItens.length ? despItens.map(d=>`
+    <tr><td>${d.desc.replace(/</g,'&lt;')}</td><td>${d.tipo}</td><td>${d.pago?'Pago':'Em aberto'}${d.venc?' • vence '+isoParaBR(d.venc):''}</td><td class="num">${fmt(d.valor)}</td></tr>`).join('') : `<tr><td colspan="4" class="rel-vazio">Sem despesas neste mes.</td></tr>`;
+
+  const opcoesMes = MESES.map(mm=>`<option value="${mm}" ${mm===m?'selected':''}>${mm.charAt(0).toUpperCase()+mm.slice(1)}</option>`).join('');
+
+  document.getElementById('relatorioBox').innerHTML = `
+    <div class="rel-head">
+      <h2>Relatorio — ${m.charAt(0).toUpperCase()+m.slice(1)} ${anoAtual}${planilhaNome?' • '+planilhaNome:''}</h2>
+      <button class="rel-close" onclick="fecharRelatorio()">&times;</button>
+    </div>
+    <div class="rel-controls">
+      <label style="font-size:12px;color:#6b7482">Mes:</label>
+      <select onchange="trocarMesRelatorio(this.value)">${opcoesMes}</select>
+      <button onclick="baixarRelatorioPDF()">⬇ Baixar PDF</button>
+    </div>
+    <div class="rel-body" id="relImprimir">
+      <div class="rel-cards">
+        <div class="rel-card"><div class="l">Receitas</div><div class="v" style="color:#159a5f">${fmt(rec)}</div></div>
+        <div class="rel-card"><div class="l">Despesas</div><div class="v" style="color:#d64545">${fmt(desp)}</div></div>
+        <div class="rel-card"><div class="l">Saldo</div><div class="v" style="color:${saldo>=0?'#159a5f':'#d64545'}">${fmt(saldo)}</div></div>
+        <div class="rel-card"><div class="l">Pago</div><div class="v" style="color:#8a4fd6">${fmt(pago)}</div></div>
+        <div class="rel-card"><div class="l">Falta pagar</div><div class="v" style="color:#c88a00">${fmt(aberto)}</div></div>
+        <div class="rel-card"><div class="l">Recebido</div><div class="v" style="color:#159a5f">${fmt(recebido)}</div></div>
+      </div>
+      <div class="rel-sec">
+        <h3>Receitas</h3>
+        <table class="rel-table"><thead><tr><th>Descricao</th><th>Situacao</th><th style="text-align:right">Valor</th></tr></thead><tbody>${recRows}</tbody></table>
+      </div>
+      <div class="rel-sec">
+        <h3>Despesas</h3>
+        <table class="rel-table"><thead><tr><th>Descricao</th><th>Tipo</th><th>Situacao</th><th style="text-align:right">Valor</th></tr></thead><tbody>${despRows}</tbody></table>
+      </div>
+    </div>`;
+}
+
+function baixarRelatorioPDF(){
+  // usa a impressao do navegador (Salvar como PDF) so do conteudo do relatorio
+  const conteudo = document.getElementById('relImprimir').innerHTML;
+  const titulo = document.querySelector('#relatorioBox .rel-head h2').textContent;
+  const w = window.open('', '_blank');
+  w.document.write(`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>${titulo}</title>
+    <style>
+      body{font-family:-apple-system,'Segoe UI',Roboto,sans-serif;color:#1e2430;padding:24px;}
+      h1{font-size:20px;color:#159a5f;margin-bottom:4px;}
+      .sub{color:#6b7482;font-size:13px;margin-bottom:18px;}
+      .rel-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:20px;}
+      .rel-card{background:#f7f9fb;border-radius:8px;padding:10px;border:1px solid #eef1f5;}
+      .rel-card .l{font-size:10px;color:#6b7482;text-transform:uppercase;}
+      .rel-card .v{font-size:16px;font-weight:700;margin-top:3px;}
+      .rel-sec{margin-bottom:16px;}
+      .rel-sec h3{font-size:13px;border-bottom:2px solid #159a5f;padding-bottom:3px;display:inline-block;}
+      table{width:100%;border-collapse:collapse;font-size:12px;margin-top:6px;}
+      th{text-align:left;color:#6b7482;font-size:10px;text-transform:uppercase;padding:5px 6px;border-bottom:1px solid #ddd;}
+      td{padding:5px 6px;border-bottom:1px solid #f0f0f0;}
+      td.num{text-align:right;}
+      .rel-vazio{color:#999;padding:5px 6px;}
+      @media print{ body{padding:0;} }
+    </style></head><body>
+    <h1>ContaLeve</h1><div class="sub">${titulo}</div>
+    ${conteudo}
+    <script>window.onload=function(){window.print();}<\/script>
+    </body></html>`);
+  w.document.close();
+}
 
 async function trocarPlanilha(id){ planilhaAtual = id; await carregar(); }
 
