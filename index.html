@@ -67,6 +67,30 @@
   .rel-table td { padding:6px 8px; border-bottom:1px solid #f2f4f7; }
   .rel-table td.num { text-align:right; }
   .rel-vazio { color:#9aa3b0; font-size:13px; padding:6px 8px; }
+  .fin-panel { background:linear-gradient(135deg,#1E3A34,#159A5F); border-radius:14px; padding:18px 20px; margin-bottom:20px; color:#fff; box-shadow:0 2px 8px rgba(21,154,95,.25); }
+  .fin-panel h3 { font-size:15px; margin-bottom:14px; display:flex; align-items:center; gap:8px; }
+  .fin-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:14px; margin-bottom:14px; }
+  .fin-item .l { font-size:11px; text-transform:uppercase; opacity:.85; letter-spacing:.5px; }
+  .fin-item .v { font-size:22px; font-weight:700; margin-top:3px; }
+  .fin-bar-wrap { background:rgba(255,255,255,.25); border-radius:20px; height:14px; overflow:hidden; margin-top:4px; }
+  .fin-bar { background:#E8A020; height:100%; border-radius:20px; transition:width .4s; }
+  .fin-bar-label { font-size:12px; margin-top:6px; opacity:.9; }
+  .parcelas-box { background:#fff; border:1px solid #e2e6ec; border-radius:14px; padding:8px 4px; box-shadow:0 1px 3px rgba(30,40,60,.05); }
+  .parcela-linha { display:flex; align-items:center; gap:14px; padding:12px 16px; border-bottom:1px solid #f2f4f7; }
+  .parcela-linha:last-child { border-bottom:none; }
+  .parcela-linha.paga { background:#eafaf1; }
+  .parcela-linha.vencida { background:#fbe4e4; }
+  .parcela-num { font-weight:700; color:#1e2430; font-size:14px; min-width:90px; }
+  .parcela-data { color:#6b7482; font-size:13px; min-width:110px; }
+  .parcela-valor { color:#1e2430; font-weight:700; font-size:15px; margin-left:auto; min-width:110px; text-align:right; }
+  .parcela-linha.paga .parcela-valor { color:#0f7a49; }
+  .parcela-linha.vencida .parcela-valor { color:#c0392b; }
+  .parcela-chk { display:flex; align-items:center; gap:6px; min-width:130px; }
+  .parcela-chk input { width:22px; height:22px; cursor:pointer; accent-color:#159a5f; }
+  .parcela-chk label { font-size:12px; color:#6b7482; cursor:pointer; }
+  .parcela-badge { font-size:10px; font-weight:700; padding:2px 7px; border-radius:5px; }
+  .parcela-badge.venc { background:#d64545; color:#fff; }
+  .parcela-head { display:flex; align-items:center; gap:14px; padding:10px 16px; font-size:11px; color:#6b7482; text-transform:uppercase; letter-spacing:.5px; border-bottom:2px solid #eef1f5; font-weight:600; }
   .mes { background:#fff; border:1px solid #e2e6ec; border-radius:14px; margin-bottom:20px; overflow:hidden; box-shadow:0 1px 3px rgba(30,40,60,.05); }
   .mes-header { padding:16px 20px; background:#f7f9fb; cursor:pointer; display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #eef1f5; }
   .mes-header h2 { font-size:18px; text-transform:capitalize; color:#141924; }
@@ -148,6 +172,7 @@
     </div>
   </div>
   <div class="painel" id="painelGeral"></div>
+  <div id="painelFinanciamento"></div>
   <div class="painel-cartoes" id="painelCartoes"></div>
   <div class="alerta-topo" id="alertaTopo"></div>
   <div class="toolbar">
@@ -156,6 +181,7 @@
     <button onclick="recarregar()">Atualizar</button>
     <button onclick="abrirRelatorio()" style="border-color:#2f6fd6;color:#2f6fd6;font-weight:600">📊 Relatorio do mes</button>
   </div>
+  <div id="parcelasFinLista"></div>
   <div id="meses"></div>
 
   <div id="relatorioOverlay" class="rel-overlay" onclick="fecharRelatorioFundo(event)">
@@ -239,8 +265,101 @@ async function carregar(){
 
   setStatus('Sincronizado', 'ok');
   render();
+  atualizarPainelFinanciamento();
 }
 async function recarregar(){ await carregar(); }
+
+// ---------- Painel de financiamento (acompanhamento de parcelas) ----------
+// Detecta se a planilha atual e um financiamento (tem lancamentos 'Parcela X/Y')
+// e mostra pagas/faltam/quitado, somando TODOS os anos.
+let parcelasFin = []; // parcelas do financiamento atual (todos os anos)
+async function atualizarPainelFinanciamento(){
+  const box = document.getElementById('painelFinanciamento');
+  const listaBox = document.getElementById('parcelasFinLista');
+  if(!box || !planilhaAtual){ if(box) box.innerHTML=''; if(listaBox) listaBox.innerHTML=''; return; }
+  // busca todas as parcelas da planilha (todos os anos) que tenham descricao "Parcela"
+  const r = await sb.from(TABELA).select('id,descricao,valor,pago,vencimento,ano,mes')
+    .eq('planilha_id', planilhaAtual).ilike('descricao','Parcela %');
+  if(r.error || !r.data || r.data.length===0){ box.innerHTML=''; if(listaBox) listaBox.innerHTML=''; parcelasFin=[]; return; }
+  parcelasFin = r.data.slice();
+  // ordena por vencimento (cronologico)
+  parcelasFin.sort((a,b)=> (a.vencimento||'').localeCompare(b.vencimento||''));
+
+  const total = parcelasFin.length;
+  const pagas = parcelasFin.filter(p=>p.pago).length;
+  const faltam = total - pagas;
+  const valorPago = parcelasFin.filter(p=>p.pago).reduce((s,p)=>s+num(p.valor),0);
+  const valorResta = parcelasFin.filter(p=>!p.pago).reduce((s,p)=>s+num(p.valor),0);
+  const valorTotal = valorPago + valorResta;
+  const pct = total>0 ? Math.round((pagas/total)*100) : 0;
+  const abertas = parcelasFin.filter(p=>!p.pago && p.vencimento).sort((a,b)=>a.vencimento.localeCompare(b.vencimento));
+  const prox = abertas[0];
+  const planilhaNome = (planilhas.find(p=>p.id===planilhaAtual)||{}).nome || 'Financiamento';
+
+  box.innerHTML = `
+    <div class="fin-panel">
+      <h3>🚗 ${planilhaNome.replace(/</g,'&lt;')} — acompanhamento</h3>
+      <div class="fin-grid">
+        <div class="fin-item"><div class="l">Parcelas pagas</div><div class="v">${pagas} de ${total}</div></div>
+        <div class="fin-item"><div class="l">Faltam</div><div class="v">${faltam}</div></div>
+        <div class="fin-item"><div class="l">Ja quitado</div><div class="v">${fmt(valorPago)}</div></div>
+        <div class="fin-item"><div class="l">Resta pagar</div><div class="v">${fmt(valorResta)}</div></div>
+        <div class="fin-item"><div class="l">Valor total</div><div class="v">${fmt(valorTotal)}</div></div>
+      </div>
+      <div class="fin-bar-wrap"><div class="fin-bar" style="width:${pct}%"></div></div>
+      <div class="fin-bar-label">${pct}% quitado${prox?` • proxima: ${isoParaBR(prox.vencimento)} (${fmt(num(prox.valor))})`:' • tudo pago! 🎉'}</div>
+    </div>`;
+
+  renderParcelasLista();
+}
+
+function statusVencParcela(p){
+  if(p.pago) return 'paga';
+  if(p.vencimento){
+    const hoje=hojeISO(); const v=new Date(p.vencimento+'T00:00:00');
+    if(v < hoje) return 'vencida';
+  }
+  return '';
+}
+function renderParcelasLista(){
+  const listaBox = document.getElementById('parcelasFinLista');
+  if(!listaBox) return;
+  if(!parcelasFin.length){ listaBox.innerHTML=''; return; }
+  const linhas = parcelasFin.map(p=>{
+    const cls = statusVencParcela(p);
+    const badge = cls==='vencida' ? '<span class="parcela-badge venc">VENCIDA</span>' : '';
+    return `
+      <div class="parcela-linha ${cls}">
+        <span class="parcela-num">${(p.descricao||'').replace('Parcela ','Parc. ')}</span>
+        <span class="parcela-data">${isoParaBR(p.vencimento)} ${badge}</span>
+        <span class="parcela-valor">${fmt(num(p.valor))}</span>
+        <span class="parcela-chk">
+          <input type="checkbox" ${p.pago?'checked':''} onchange="marcarParcela('${p.id}', this.checked)">
+          <label>${p.pago?'Pago':'Marcar pago'}</label>
+        </span>
+      </div>`;
+  }).join('');
+  listaBox.innerHTML = `
+    <div class="parcelas-box">
+      <div class="parcela-head">
+        <span class="parcela-num">Parcela</span>
+        <span class="parcela-data">Vencimento</span>
+        <span class="parcela-valor">Valor</span>
+        <span class="parcela-chk">Situacao</span>
+      </div>
+      ${linhas}
+    </div>`;
+}
+
+async function marcarParcela(id, pago){
+  // atualiza local
+  const p = parcelasFin.find(x=>x.id===id); if(p) p.pago = pago;
+  setStatus('Salvando...', 'sync');
+  const { error } = await sb.from(TABELA).update({pago}).eq('id', id);
+  if(error){ setStatus('Erro: '+error.message,'erro'); return; }
+  setStatus('Sincronizado','ok');
+  atualizarPainelFinanciamento(); // recalcula painel + lista
+}
 async function recarregarSuave(){ if(digitando){ refreshPendente = true; return; } await carregar(); }
 
 document.addEventListener('focusin', (e)=>{ if(e.target && (e.target.tagName==='INPUT'||e.target.tagName==='SELECT')) digitando = true; });
@@ -377,8 +496,25 @@ function render(){
   if(anoSel && !anoSel.dataset.pronto){
     const base = new Date().getFullYear();
     let opts='';
-    for(let a=base-1; a<=base+3; a++){ opts+=`<option value="${a}" ${a===anoAtual?'selected':''}>${a}</option>`; }
+    for(let a=base-1; a<=base+6; a++){ opts+=`<option value="${a}" ${a===anoAtual?'selected':''}>${a}</option>`; }
     anoSel.innerHTML=opts; anoSel.dataset.pronto='1';
+  }
+
+  // detecta planilha de financiamento (mostra so o painel de acompanhamento)
+  const plObj = planilhas.find(p=>p.id===planilhaAtual);
+  const ehFinanciamento = plObj && /financiamento/i.test(plObj.nome||'');
+  const pgGeral = document.getElementById('painelGeral');
+  const pgCartoes = document.getElementById('painelCartoes');
+  if(ehFinanciamento){
+    if(pgGeral) pgGeral.style.display='none';
+    if(pgCartoes) pgCartoes.style.display='none';
+    const mesesEl = document.getElementById('meses'); if(mesesEl) mesesEl.style.display='none';
+    const anoSelBox = document.getElementById('anoSelect'); if(anoSelBox && anoSelBox.parentElement) anoSelBox.parentElement.style.display='none';
+  } else {
+    if(pgGeral) pgGeral.style.display='';
+    if(pgCartoes) pgCartoes.style.display='';
+    const mesesEl = document.getElementById('meses'); if(mesesEl) mesesEl.style.display='';
+    const anoSelBox = document.getElementById('anoSelect'); if(anoSelBox && anoSelBox.parentElement) anoSelBox.parentElement.style.display='';
   }
 
   let recTotal=0, despTotal=0, pagoTotal=0, abertoTotal=0, recebidoTotal=0, cartoesTotal=0, diversasTotal=0, boletosTotal=0;
@@ -623,7 +759,7 @@ async function remover(id, mes){
 function edit(id, campo, valor){
   let mesAlvo=null;
   for(const m of MESES){ for(const lista of [dados[m].receitas, dados[m].despesas]){ const item=lista.find(x=>x.id===id); if(item){ item[campo]=valor; mesAlvo=m; } } }
-  if(campo==='pago'){ render(); if(mesAlvo) reabrir(mesAlvo); }
+  if(campo==='pago'){ render(); if(mesAlvo) reabrir(mesAlvo); atualizarPainelFinanciamento(); }
   else if(campo==='vencimento'){ atualizarLinhaVenc(id); atualizarResumos(); }
   else if(campo==='valor'){ atualizarResumos(); if(mesAlvo) atualizarMiniMes(mesAlvo); }
   clearTimeout(timers[id+campo]); setStatus('Salvando...', 'sync');
@@ -771,8 +907,61 @@ function baixarRelatorioPDF(){
 
 async function trocarPlanilha(id){ planilhaAtual = id; await carregar(); }
 
-async function adicionarPlanilha(){
-  const nome = prompt('Nome da nova planilha (ex.: Empresa, Pessoal, Marido):', '');
+async function criarFinanciamento(){
+  // valores padrao ja preenchidos; usuario confirma/edita
+  const nome = prompt('Nome do financiamento / planilha:', 'Financiamento do Carro');
+  if(nome===null) return;
+  const qtdStr = prompt('Quantas parcelas?', '48');
+  if(qtdStr===null) return;
+  const qtd = parseInt(qtdStr,10); if(!qtd || qtd<1){ alert('Quantidade invalida.'); return; }
+  const valorStr = prompt('Valor de cada parcela (ex.: 1500,00):', '1500,00');
+  if(valorStr===null) return;
+  const valor = parseFloat(String(valorStr).replace(/\./g,'').replace(',', '.'))||0;
+  const dataStr = prompt('Data da 1a parcela (dd/mm/aaaa):', '10/09/2026');
+  if(dataStr===null) return;
+  const iso1 = brParaISO(dataStr);
+  if(!iso1){ alert('Data invalida. Use dd/mm/aaaa.'); return; }
+
+  if(!confirm(`Criar planilha "${nome}" com ${qtd} parcelas de ${fmtMoedaBR(valor)}, comecando em ${dataStr}?`)) return;
+
+  setStatus('Gerando parcelas...', 'sync');
+
+  // 1) cria a planilha
+  const rpl = await sb.from(TABELA_PL).insert({nome:nome.trim()||'Financiamento', ordem:Date.now()}).select().single();
+  if(rpl.error){ setStatus('Erro: '+rpl.error.message,'erro'); return; }
+  const novaPL = rpl.data.id;
+
+  // 2) monta as 48 (ou N) parcelas
+  const [y1,m1,d1] = iso1.split('-').map(x=>parseInt(x,10));
+  const linhas = [];
+  for(let i=0; i<qtd; i++){
+    const dt = new Date(y1, (m1-1)+i, d1);   // avanca i meses
+    const ano = dt.getFullYear();
+    const mesNome = MESES[dt.getMonth()];
+    const dd = String(dt.getDate()).padStart(2,'0');
+    const mm = String(dt.getMonth()+1).padStart(2,'0');
+    const venc = ano+'-'+mm+'-'+dd;
+    linhas.push({
+      ano, mes:mesNome, categoria:'despesa', descricao:`Parcela ${i+1}/${qtd}`,
+      valor, tipo:'fixa', cartao_id:null, pago:false, vencimento:venc,
+      ordem: Date.now()+i, planilha_id:novaPL
+    });
+  }
+
+  // 3) insere tudo de uma vez
+  const rins = await sb.from(TABELA).insert(linhas);
+  if(rins.error){ setStatus('Erro ao gerar parcelas: '+rins.error.message,'erro'); return; }
+
+  // 4) vai para a planilha nova, no ano da 1a parcela
+  planilhaAtual = novaPL;
+  anoAtual = y1;
+  const anoSel = document.getElementById('anoSelect'); if(anoSel) anoSel.dataset.pronto='';
+  await carregar();
+  setStatus('Sincronizado','ok');
+  alert(`Pronto! ${qtd} parcelas criadas na planilha "${nome}". Use o seletor de Ano para navegar entre os anos do financiamento.`);
+}
+
+async function adicionarPlanilha(){  const nome = prompt('Nome da nova planilha (ex.: Empresa, Pessoal, Marido):', '');
   if(nome===null) return; // cancelou
   const nomeFinal = (nome.trim()==='') ? 'Nova planilha' : nome.trim();
   setStatus('Salvando...', 'sync');
